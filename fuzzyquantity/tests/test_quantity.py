@@ -183,3 +183,129 @@ class TestFuzzyQuantitySubtraction:
         fuzz3 = fuzz1 - fuzz2
         unc_expected = np.sqrt(uncertainty1 ** 2 + uncertainty2 ** 2)
         assert np.array_equal(fuzz3.uncertainty, unc_expected)
+
+class TestFuzzyQuantityMultiplication:
+    def test_multiplication_has_expected_value_int(self):
+        fuzz1 = FuzzyQuantity(5, 2)
+        fuzz2 = FuzzyQuantity(3, 1)
+        fuzz3 = fuzz1 * fuzz2
+        assert fuzz3.value == 15
+
+    def test_multiplication_has_expected_value_float(self):
+        fuzz1 = FuzzyQuantity(5.3, 2.4)
+        fuzz2 = FuzzyQuantity(3.8, 1.1)
+        fuzz3 = fuzz1 * fuzz2
+        assert fuzz3.value == 5.3 * 3.8
+
+    def test_multiplication_has_expected_value_list(self):
+        fuzz1 = FuzzyQuantity([5.0, 3.0], [2.0, 1.0])
+        fuzz2 = FuzzyQuantity([5.0, 12.0], [12.0, 11.0])
+        fuzz3 = fuzz1 * fuzz2
+        assert np.array_equal(fuzz3.value, np.array([25.0, 36.0]))
+
+    def test_multiplication_has_expected_value_array(self):
+        fuzz1 = FuzzyQuantity(np.array([5.0, 3.0]), np.array([2.0, 1.0]))
+        fuzz2 = FuzzyQuantity(np.array([5.0, 12.0]), np.array([12.0, 11.0]))
+        fuzz3 = fuzz1 * fuzz2
+        assert np.array_equal(fuzz3.value, np.array([25.0, 36.0]))
+
+    def test_multiplication_has_expected_uncertainty_int(self):
+        fuzz1 = FuzzyQuantity(5, 2)
+        fuzz2 = FuzzyQuantity(3, 1)
+        fuzz3 = fuzz1 * fuzz2
+        unc_expected = 5 * 3 * np.sqrt(((2/5)**2) + ((1/3)**2))
+        assert fuzz3.uncertainty == unc_expected
+
+    def test_multiplication_has_expected_uncertainty_float(self):
+        fuzz1 = FuzzyQuantity(5.3, 2.4)
+        fuzz2 = FuzzyQuantity(3.8, 1.1)
+        fuzz3 = fuzz1 * fuzz2
+        unc_expected = 5.3 * 3.8 * np.sqrt(((2.4/5.3)**2) + ((1.1/3.8)** 2))
+        assert fuzz3.uncertainty == unc_expected
+
+    def test_multiplication_has_expected_uncertainty_list(self):
+        value1 = [5.0, 3.0]
+        uncertainty1 = [2.0, 1.0]
+        value2 = [15.0, 13.0]
+        uncertainty2 = [12.0, 11.0]
+        fuzz1 = FuzzyQuantity(value1, uncertainty1)
+        fuzz2 = FuzzyQuantity(value2, uncertainty2)
+        fuzz3 = fuzz1 * fuzz2
+        unc_expected = np.array(value1) * np.array(value2) * \
+                       np.sqrt((np.array(uncertainty1)/np.array(value1))**2 + \
+                       (np.array(uncertainty2)/np.array(value2))**2)
+        assert np.array_equal(fuzz3.uncertainty, unc_expected)
+
+    def test_multiplication_has_expected_uncertainty_array(self):
+        value1 = np.array([5.0, 3.0])
+        uncertainty1 = np.array([2.0, 1.0])
+        value2 = np.array([15.0, 13.0])
+        uncertainty2 = np.array([12.0, 11.0])
+        fuzz1 = FuzzyQuantity(value1, uncertainty1)
+        fuzz2 = FuzzyQuantity(value2, uncertainty2)
+        fuzz3 = fuzz1 * fuzz2
+        unc_expected = value1 * value2 * np.sqrt((uncertainty1/value1) ** 2 + (uncertainty2/value2) ** 2)
+        assert np.array_equal(fuzz3.uncertainty, unc_expected)
+        
+class TestFuzzyQuantityDivision:
+    def test_division_has_expected_value_int(self):
+        fuzz1 = FuzzyQuantity(15, 2)
+        fuzz2 = FuzzyQuantity(3, 1)
+        fuzz3 = fuzz1 / fuzz2
+        assert fuzz3.value == 5
+
+    def test_division_has_expected_value_float(self):
+        fuzz1 = FuzzyQuantity(5.8, 2.4)
+        fuzz2 = FuzzyQuantity(2.4, 1.1)
+        fuzz3 = fuzz1 / fuzz2
+        assert fuzz3.value == 5.8 / 2.4
+
+    def test_division_has_expected_value_list(self):
+        fuzz1 = FuzzyQuantity([10.0, 36.0], [2.0, 1.0])
+        fuzz2 = FuzzyQuantity([5.0, 12.0], [12.0, 11.0])
+        fuzz3 = fuzz1 / fuzz2
+        assert np.array_equal(fuzz3.value, np.array([2.0, 3.0]))
+
+    def test_division_has_expected_value_array(self):
+        fuzz1 = FuzzyQuantity(np.array([10.0, 36.0]), np.array([2.0, 1.0]))
+        fuzz2 = FuzzyQuantity(np.array([5.0, 12.0]), np.array([12.0, 11.0]))
+        fuzz3 = fuzz1 / fuzz2
+        assert np.array_equal(fuzz3.value, np.array([2.0, 3.0]))
+
+    def test_division_has_expected_uncertainty_int(self):
+        fuzz1 = FuzzyQuantity(5, 2)
+        fuzz2 = FuzzyQuantity(3, 1)
+        fuzz3 = fuzz1 / fuzz2
+        unc_expected = (5 / 3) * np.sqrt(((2/5)**2) + ((1/3)**2))
+        assert fuzz3.uncertainty == unc_expected
+
+    def test_division_has_expected_uncertainty_float(self):
+        fuzz1 = FuzzyQuantity(5.3, 2.4)
+        fuzz2 = FuzzyQuantity(3.8, 1.1)
+        fuzz3 = fuzz1 / fuzz2
+        unc_expected = (5.3 / 3.8) * np.sqrt(((2.4/5.3)**2) + ((1.1/3.8)** 2))
+        assert fuzz3.uncertainty == unc_expected
+
+    def test_division_has_expected_uncertainty_list(self):
+        value1 = [5.0, 3.0]
+        uncertainty1 = [2.0, 1.0]
+        value2 = [15.0, 13.0]
+        uncertainty2 = [12.0, 11.0]
+        fuzz1 = FuzzyQuantity(value1, uncertainty1)
+        fuzz2 = FuzzyQuantity(value2, uncertainty2)
+        fuzz3 = fuzz1 / fuzz2
+        unc_expected = (np.array(value1) / np.array(value2)) * \
+                       np.sqrt((np.array(uncertainty1)/np.array(value1))**2 + \
+                       (np.array(uncertainty2)/np.array(value2))**2)
+        assert np.array_equal(fuzz3.uncertainty, unc_expected)
+
+    def test_division_has_expected_uncertainty_array(self):
+        value1 = np.array([5.0, 3.0])
+        uncertainty1 = np.array([2.0, 1.0])
+        value2 = np.array([15.0, 13.0])
+        uncertainty2 = np.array([12.0, 11.0])
+        fuzz1 = FuzzyQuantity(value1, uncertainty1)
+        fuzz2 = FuzzyQuantity(value2, uncertainty2)
+        fuzz3 = fuzz1 / fuzz2
+        unc_expected = (value1 / value2) * np.sqrt((uncertainty1/value1) ** 2 + (uncertainty2/value2) ** 2)
+        assert np.array_equal(fuzz3.uncertainty, unc_expected)
