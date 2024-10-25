@@ -7,7 +7,6 @@ from fuzzyquantity.string_formatting import (_terminal_string,
 
 from fuzzyquantity.derivatives import propagate_1, propagate_2
 
-
 class FuzzyQuantity(Quantity):
     """
     A subclass of Astropy's `Quantity` which includes uncertainties and handles
@@ -67,6 +66,26 @@ class FuzzyQuantity(Quantity):
             uncertainty = 0
             unit = dimensionless_unscaled
         return value, uncertainty, unit
+
+    def __array_function__(self, func, types, args, kwargs):
+        """Wrap numpy functions.
+
+        Parameters
+        ----------
+        func: callable
+            Arbitrary callable exposed by NumPy’s public API.
+        types: list
+            Collection of unique argument types from the original NumPy
+            function call that implement ``__array_function__``.
+        args: tuple
+            Positional arguments directly passed on from the original call.
+        kwargs: dict
+            Keyword arguments directly passed on from the original call.
+        """
+        if func not in HANDLED_AFUNCS:
+            return NotImplemented
+
+        return HANDLED_AFUNCS[func](*args, **kwargs)
 
     def __add__(self, other):
         value, uncertainty, unit = self._parse_input(other)
@@ -147,3 +166,90 @@ class FuzzyQuantity(Quantity):
         else:
             return _make_oldschool_latex_string(
                 self.value, self.uncertainty.value, self.unit, sci_thresh)
+
+HANDLED_AFUNCS = {}
+HANDLED_UFUNCS = {}  # must be func(method, *inputs, **kwargs)
+
+
+def _implements_array_func(numpy_function):
+    """Register an __array_function__ implementation for QFloat objects."""
+    def decorator_array_func(func):
+        HANDLED_AFUNCS[numpy_function] = func
+        return func
+    return decorator_array_func
+
+
+def _implements_ufunc(numpy_ufunc):
+    """Register an ufunc implementation for QFloat objects."""
+    def decorator_ufunc(func):
+        HANDLED_UFUNCS[numpy_ufunc] = func
+        return func
+    return decorator_ufunc
+
+
+@_implements_array_func(np.shape)
+def _np_shape(fuzzy_quantity: FuzzyQuantity) -> tuple[int, ...]:
+    """Implement np.shape for FuzzyQuantity objects."""
+    return fuzzy_quantity.shape
+
+
+@_implements_array_func(np.size)
+def _np_size(fuzzy_quantity: FuzzyQuantity) -> int:
+    return fuzzy_quantity.size
+
+
+@_implements_array_func(np.clip)
+def _np_clip(fuzzy_quantity: FuzzyQuantity, a_min, a_max, *args, **kwargs) -> FuzzyQuantity:
+    value = np.clip(fuzzy_quantity.value, a_min, a_max, *args, **kwargs)
+    return FuzzyQuantity(value, fuzzy_quantity.uncertainty, fuzzy_quantity.unit)
+
+
+def _array_func_simple_wrapper(numpy_func):
+    """Wraps simple array functions.
+
+    Notes
+    -----
+    - Functions elegible for these are that ones who applies for nominal and
+      std_dev values and return a new QFloat with the applied values.
+    - No conversion or special treatment is done in this wrapper.
+    - Only for one array ate once.
+    """
+    def wrapper(fuzzy_quantity, *args, **kwargs):
+        value = numpy_func(fuzzy_quantity.value, *args, **kwargs)
+        uncertainty = numpy_func(fuzzy_quantity.uncertainty, *args, **kwargs)
+        return FuzzyQuantity(value, uncertainty, fuzzy_quantity.unit)
+    _implements_array_func(numpy_func)(wrapper)
+
+
+_array_func_simple_wrapper(np.delete)
+_array_func_simple_wrapper(np.expand_dims)
+_array_func_simple_wrapper(np.flip)
+_array_func_simple_wrapper(np.fliplr)
+_array_func_simple_wrapper(np.flipud)
+_array_func_simple_wrapper(np.moveaxis)
+_array_func_simple_wrapper(np.ravel)
+_array_func_simple_wrapper(np.repeat)
+_array_func_simple_wrapper(np.reshape)
+_array_func_simple_wrapper(np.resize)
+_array_func_simple_wrapper(np.roll)
+_array_func_simple_wrapper(np.rollaxis)
+_array_func_simple_wrapper(np.rot90)
+_array_func_simple_wrapper(np.squeeze)
+_array_func_simple_wrapper(np.swapaxes)
+_array_func_simple_wrapper(np.take)
+_array_func_simple_wrapper(np.tile)
+_array_func_simple_wrapper(np.transpose)
+
+
+@_implements_array_func(np.round)
+@_implements_array_func(np.around)
+def _np_round(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> FuzzyQuantity:
+    """Implement np.round for FuzzyQuantity objects."""
+    value = np.round(fuzzy_quantity.value, *args, **kwargs)
+    uncertainty = np.round(fuzzy_quantity.uncertainty, *args, **kwargs)
+    return FuzzyQuantity(value, uncertainty, fuzzy_quantity.unit)
+
+if __name__ == '__main__':
+    fuzz = FuzzyQuantity(7, 2, unit = 'Jy')
+
+    print(np.clip(fuzz, 8.5, 9.1))
