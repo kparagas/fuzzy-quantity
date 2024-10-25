@@ -80,6 +80,84 @@ derivatives = {
 }
 """Copied from 'astropop' package"""
 
+def propagate_1(func, fx, x, sx):
+    """Propagate errors using function derivatives.
+
+    Parameters
+    ----------
+    func: string
+        Function name to perform error propagation. Must be in derivatives
+        keys.
+    fx: float or array_like
+        Numerical result of f(x, y).
+    x: float or array_like
+        Variable of the function.
+    sx: float or array_like
+        1-sigma errors of the function variable.
+
+    Returns
+    -------
+    sf: float or array_like
+        1-sigma uncorrelated error associated to the operation.
+    """
+    if func not in derivatives.keys():
+        raise ValueError(f'func {func} not in derivatives.')
+
+    if np.size(derivatives[func]) != 1:
+        raise ValueError(f'func {func} is not a 1 variable function.')
+
+    try:
+        deriv = derivatives[func](x)
+        sf = deriv*sx
+        return sf
+    except (ValueError, ZeroDivisionError, OverflowError):
+        shape = np.shape(fx)
+        if len(shape) == 0:
+            return np.nan
+        else:
+            return np.full(shape, fill_value=np.nan)
+
+def propagate_2(func, fxy, x, y, sx, sy):
+    """Propagate errors using function derivatives.
+
+    Parameters
+    ----------
+    func: string
+        Function name to perform error propagation. Must be in derivatives
+        keys.
+    fxy: float or array_like
+        Numerical result of f(x, y).
+    x, y: float or array_like
+        Variables of the function.
+    sx, sy: float or array_like
+        1-sigma errors of the function variables.
+
+    Returns
+    -------
+    sf: float or array_like
+        1-sigma uncorrelated error associated to the operation.
+    """
+    if func not in derivatives.keys():
+        raise ValueError(f'func {func} not in derivatives.')
+
+    if np.size(derivatives[func]) != 2:
+        raise ValueError(f'func {func} is not a 2 variable function.')
+
+    deriv_x, deriv_y = derivatives[func]
+    try:
+        del_x2 = np.square(deriv_x(x, y))
+        del_y2 = np.square(deriv_y(x, y))
+        sx2 = np.square(sx)
+        sy2 = np.square(sy)
+        sf = np.sqrt(del_x2*sx2 + del_y2*sy2)
+        return sf
+    except (ValueError, ZeroDivisionError, OverflowError):
+        shape = np.shape(fxy)
+        if len(shape) == 0:
+            return np.nan
+        else:
+            return np.empty(shape).fill(np.nan)
+
 def numerical_derivative(func, var):
     """Create a function to compute a numerical derivative of func.
 

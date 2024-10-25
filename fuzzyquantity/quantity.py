@@ -5,6 +5,8 @@ from fuzzyquantity.string_formatting import (_terminal_string,
                                              _make_siunitx_string,
                                              _make_oldschool_latex_string)
 
+from fuzzyquantity.derivatives import propagate_1, propagate_2
+
 
 class FuzzyQuantity(Quantity):
     """
@@ -69,7 +71,7 @@ class FuzzyQuantity(Quantity):
     def __add__(self, other):
         value, uncertainty, unit = self._parse_input(other)
         out_value = self.value * self.unit + value * unit
-        out_uncertainty = self._prop_err_add_sub(uncertainty, unit)
+        out_uncertainty = propagate_2('add', out_value, self.value, value, self.uncertainty, uncertainty)
         return FuzzyQuantity(value=out_value, uncertainty=out_uncertainty)
 
     __radd__ = __add__
@@ -77,7 +79,7 @@ class FuzzyQuantity(Quantity):
     def __sub__(self, other):
         value, uncertainty, unit = self._parse_input(other)
         out_value = self.value * self.unit - value * unit
-        out_uncertainty = self._prop_err_add_sub(uncertainty, unit)
+        out_uncertainty = propagate_2('sub', out_value, self.value, value, self.uncertainty, uncertainty)
         return FuzzyQuantity(value=out_value, uncertainty=out_uncertainty)
 
     __rsub__ = __sub__
@@ -85,8 +87,7 @@ class FuzzyQuantity(Quantity):
     def __mul__(self, other):
         value, uncertainty, unit = self._parse_input(other)
         out_value = self.value * self.unit * value * unit
-        out_uncertainty = self._prop_err_mul_truediv(out_value, value,
-                                                     uncertainty)
+        out_uncertainty = propagate_2('mul', out_value, self.value, value, self.uncertainty, uncertainty)
         return FuzzyQuantity(value=out_value, uncertainty=out_uncertainty)
 
     __rmul__ = __mul__
@@ -94,11 +95,18 @@ class FuzzyQuantity(Quantity):
     def __truediv__(self, other):
         value, uncertainty, unit = self._parse_input(other)
         out_value = self.value * self.unit / (value * unit)
-        out_uncertainty = self._prop_err_mul_truediv(out_value, value,
-                                                     uncertainty)
+        out_uncertainty = propagate_2('truediv', out_value, self.value, value, self.uncertainty, uncertainty)
         return FuzzyQuantity(value=out_value, uncertainty=out_uncertainty)
 
     __rtruediv__ = __truediv__
+
+    def __pow__(self, other):
+        value, uncertainty, unit = self._parse_input(other)
+        if unit != dimensionless_unscaled:
+            raise ValueError('u r dumb. exponent must be unitless.')
+        out_value = (self.value * self.unit) ** (value)
+        out_uncertainty = propagate_2('pow', out_value, self.value, value, self.uncertainty, uncertainty)
+        return FuzzyQuantity(value=out_value, uncertainty=out_uncertainty)
 
     # TODO: implement list/array version as indicated in the docstring
     def latex(self,
