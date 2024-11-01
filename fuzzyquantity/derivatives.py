@@ -1,11 +1,12 @@
-import numpy as np
 import sys
+
+import numpy as np
 
 step_size = np.sqrt(sys.float_info.epsilon)
 
 @np.vectorize
 def _pow_dxdy(x, y):
-    """Partial derivative of x**y in y."""
+    """∂(xʸ)/∂y"""
     if (x == 0) and (y > 0):
         return 0.0
     if (x == 0) and (y <= 0):
@@ -14,20 +15,20 @@ def _pow_dxdy(x, y):
 
 @np.vectorize
 def _pow_dydx(x, y):
-    """Partial derivative of x**y in x."""
+    """∂(xʸ)/∂x"""
     if y == 0:
         return 0.0
     if (x != 0) or (y % 1 == 0):
         return y * x ** (y - 1)
-    return numerical_derivative(np.power, x)
+    return _numerical_derivative(np.power, x)
 
 @np.vectorize
 def _deriv_mod_dxdy(x, y):
-    """Partial derivative of x%y in y."""
+    """∂(x%y)/∂y"""
     if x % y < step_size:
         return np.inf
     else:
-        return numerical_derivative(np.mod, y)
+        return _numerical_derivative(np.mod, y)
 
 @np.vectorize
 def _deriv_copysign(x, y):
@@ -35,7 +36,9 @@ def _deriv_copysign(x, y):
         return np.copysign(1, y)
     return -np.copysign(1, y)
 
+# noinspection PyRedundantParentheses
 derivatives = {
+    # Python built-in operations
     'add': (lambda x, y: 1.0,
             lambda x, y: 1.0),
     'sub': (lambda x, y: 1.0,
@@ -52,7 +55,7 @@ derivatives = {
             lambda x, y: x),
     'pow': (_pow_dydx,
             _pow_dxdy),
-    # numpy fixed derivatives
+    # Numpy derivatives
     'arccos': (lambda x: -1/np.sqrt(1-x**2)),
     'arccosh': (lambda x: 1/np.sqrt(x**2-1)),
     'arcsin': (lambda x: 1/np.sqrt(1-x**2)),
@@ -78,10 +81,11 @@ derivatives = {
     'tan': (lambda x: 1+np.tan(x)**2),
     'tanh': (lambda x: 1-np.tanh(x)**2)
 }
-"""Copied from 'astropop' package"""
+"""Derivatives of mathematical functions. Copied from `astropop` package."""
 
-def propagate_1(func, fx, x, sx):
-    """Propagate errors using function derivatives.
+def _propagate_1(func, fx, x, sx):
+    """
+    Propagate errors using single-variable function derivatives.
 
     Parameters
     ----------
@@ -98,13 +102,15 @@ def propagate_1(func, fx, x, sx):
     Returns
     -------
     sf: float or array_like
-        1-sigma uncorrelated error associated to the operation.
+        1-sigma uncorrelated error associated with the function operation.
     """
     if func not in derivatives.keys():
-        raise ValueError(f'func {func} not in derivatives.')
+        raise NotImplementedError(f'Functional derivative for `{func}` not yet '
+                                  f'implemented..')
 
     if np.size(derivatives[func]) != 1:
-        raise ValueError(f'func {func} is not a 1 variable function.')
+        raise TypeError(f'Function `{func}` is not a single-variable '
+                         f'function.')
 
     try:
         deriv = derivatives[func](x)
@@ -117,8 +123,9 @@ def propagate_1(func, fx, x, sx):
         else:
             return np.full(shape, fill_value=np.nan)
 
-def propagate_2(func, fxy, x, y, sx, sy):
-    """Propagate errors using function derivatives.
+def _propagate_2(func, fxy, x, y, sx, sy):
+    """
+    Propagate errors using two-variable function derivatives.
 
     Parameters
     ----------
@@ -138,10 +145,12 @@ def propagate_2(func, fxy, x, y, sx, sy):
         1-sigma uncorrelated error associated to the operation.
     """
     if func not in derivatives.keys():
-        raise ValueError(f'func {func} not in derivatives.')
+        raise NotImplementedError(f'Functional derivative for `{func}` not yet '
+                                  f'implemented..')
 
     if np.size(derivatives[func]) != 2:
-        raise ValueError(f'func {func} is not a 2 variable function.')
+        raise TypeError(f'Function `{func}` is not a two-variable '
+                        f'function.')
 
     deriv_x, deriv_y = derivatives[func]
     try:
@@ -156,44 +165,29 @@ def propagate_2(func, fxy, x, y, sx, sy):
         if len(shape) == 0:
             return np.nan
         else:
-            return np.empty(shape).fill(np.nan)
+            return np.full(shape, fill_value=np.nan)
 
-def numerical_derivative(func, var):
-    """Create a function to compute a numerical derivative of func.
+def _numerical_derivative(func, value) -> float:
+    """
+    Calculate numerical derivative of function evaluated for a given value
+    using the ±epsilon method.
 
     Parameters
     ----------
     func: callable
         The function to compute the numerical derivative.
-    arg_ref: int or string
-        Variable to be used for diferentiation. If int, a position will be
-        used. If string, a variable name will be used.
-    step: float (optional)
-        Epsilon to compute the numerical derivative, using the
-        (-epsilon, +epsioln) method.
+    value: int or float
+        Value at which to evaluate the function.
 
     Returns
     -------
-    derivative_wrapper: callable
-        Partial derivative function.
-
-    Notes
-    -----
-    - Implementation based on `uncertainties` package.
+    float
+        The numerical derivative of the function `func` evaluated at `value`.
     """
     if not callable(func):
-        raise TypeError(f'function {func} not callable.')
-    """
-    Partial derivative, calculated with the (-epsilon, +epsilon)
-    method, which is more precise than the (0, +epsilon) method.
-    """
-    h = step_size*np.abs(var)
+        raise TypeError(f'Function {func} not callable.')
 
-    x_plus_h = var + h
-    x_minus_h = var - h
-
-    # Compute the function values with shifted variable
-    f_plus = func(x_plus_h)
-    f_minus = func(x_minus_h)
-
+    h = step_size*np.abs(value)
+    f_plus = func(value + h)
+    f_minus = func(value - h)
     return (f_plus - f_minus) / (2 * h)
