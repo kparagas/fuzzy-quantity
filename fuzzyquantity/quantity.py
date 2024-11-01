@@ -27,7 +27,7 @@ class FuzzyQuantity(u.Quantity):
             The quantity's measured value.
         uncertainty : QuantityLike=
             The quantity's measured uncertainty. Assumed to be 1-sigma
-            Gaussian uncertainty.
+            Gaussian uncertainty. Asymmetric uncertainties not supported.
         unit : unit-like, optional
             The units associated with the value. If you specify a unit here
             which is different than units attached to `value`, this will
@@ -496,7 +496,7 @@ def _np_mean(fuzzy_quantity: FuzzyQuantity,
         The average FuzzyQuantity object with propagated error.
     """
     return _calculate_mean_median(np.mean, np.sum, fuzzy_quantity, False,
-                                  *args, **kwargs)
+                                  False, *args, **kwargs)
 
 
 @_implements_array_func(np.nanmean)
@@ -521,7 +521,7 @@ def _np_nanmean(fuzzy_quantity: FuzzyQuantity,
         The average FuzzyQuantity object with propagated error, ignoring NaNs.
     """
     return _calculate_mean_median(np.nanmean, np.nansum, fuzzy_quantity, False,
-                                  *args, **kwargs)
+                                  False, *args, **kwargs)
 
 
 @_implements_array_func(np.median)
@@ -547,7 +547,7 @@ def _np_median(fuzzy_quantity: FuzzyQuantity,
         https://mathworld.wolfram.com/StatisticalMedian.html.
     """
     return _calculate_mean_median(np.median, np.sum, fuzzy_quantity, True,
-                                  *args, **kwargs)
+                                  False, *args, **kwargs)
 
 
 @_implements_array_func(np.nanmedian)
@@ -573,7 +573,38 @@ def _np_nanmedian(fuzzy_quantity: FuzzyQuantity,
         https://mathworld.wolfram.com/StatisticalMedian.html.
     """
     return _calculate_mean_median(np.nanmedian, np.nansum, fuzzy_quantity,
-                                  True, *args, **kwargs)
+                                  True, False, *args, **kwargs)
+
+
+@_implements_array_func(np.average)
+def _np_average(fuzzy_quantity: FuzzyQuantity,
+                *args,
+                **kwargs) -> FuzzyQuantity:
+    """"
+    Implement `np.average` for FuzzyQuantity objects." If object has no
+    uncertainty, the weights are equal to 1.
+
+    Parameters
+    ----------
+    fuzzy_quantity : FuzzyQuantity
+        A FuzzyQuantity object.
+    *args
+        Additional arguments to `np.mean`.
+    **kwargs : dict
+        Additional keyword arguments to `np.mean`.
+
+    Returns
+    -------
+    FuzzyQuantity
+        The weighted average FuzzyQuantity object with propagated error.
+    """
+    uncertainty = fuzzy_quantity.uncertainty
+    if uncertainty is None:
+        uncertainty = np.ones_like(fuzzy_quantity.value)
+    weights = 1 / uncertainty ** 2
+    value = np.average(fuzzy_quantity, *args, weights=weights, **kwargs)
+    uncertainty = 1 / np.sqrt(np.sum(weights, *args, **kwargs))
+    return FuzzyQuantity(value, uncertainty, fuzzy_quantity.unit)
 
 
 def _create_arrayfunc_equiv(func: callable,
