@@ -1,13 +1,16 @@
-from astropy.units import Quantity, dimensionless_unscaled
-from astropy.units.typing import QuantityLike
+from functools import partial
+
 import numpy as np
+import astropy.units as u
+from astropy.units.typing import QuantityLike
+
+from fuzzyquantity.derivatives import propagate_1, propagate_2
+from fuzzyquantity.exceptions import UnitsError
 from fuzzyquantity.string_formatting import (_terminal_string,
                                              _make_siunitx_string,
                                              _make_oldschool_latex_string)
 
-from fuzzyquantity.derivatives import propagate_1, propagate_2
-
-class FuzzyQuantity(Quantity):
+class FuzzyQuantity(u.Quantity):
     """
     A subclass of Astropy's `Quantity` which includes uncertainties and handles
     standard error propagation.
@@ -28,13 +31,13 @@ class FuzzyQuantity(Quantity):
         unit : unit-like, optional
             The units associated with the value. If you specify a unit here
             which is different than units attached to `value`, this will
-            override the `value` units.
+            override the `value` 
         kwargs
             Additional keyword arguments are passed to `Quantity`.
         """
         obj = super().__new__(cls, value=value, unit=unit, **kwargs)
-        if isinstance(uncertainty, Quantity):
-            obj.uncertainty = Quantity(uncertainty).to(obj.unit).value
+        if isinstance(uncertainty, u.Quantity):
+            obj.uncertainty = u.Quantity(uncertainty).to(obj.unit).value
         else:
             obj.uncertainty = uncertainty
         return obj
@@ -57,14 +60,14 @@ class FuzzyQuantity(Quantity):
             value = other.value
             uncertainty = other.uncertainty
             unit = other.unit
-        elif isinstance(other, Quantity):
+        elif isinstance(other, u.Quantity):
             value = other.value
             uncertainty = 0
             unit = other.unit
         else:
             value = other
             uncertainty = 0
-            unit = dimensionless_unscaled
+            unit = u.dimensionless_unscaled
         return value, uncertainty, unit
 
     def __array_function__(self, func, types, args, kwargs):
@@ -121,7 +124,7 @@ class FuzzyQuantity(Quantity):
 
     def __pow__(self, other):
         value, uncertainty, unit = self._parse_input(other)
-        if unit != dimensionless_unscaled:
+        if unit != u.dimensionless_unscaled:
             raise ValueError('u r dumb. exponent must be unitless.')
         out_value = (self.value * self.unit) ** (value)
         out_uncertainty = propagate_2('pow', out_value, self.value, value, self.uncertainty, uncertainty)
@@ -209,7 +212,7 @@ def _array_func_simple_wrapper(numpy_func):
 
     Notes
     -----
-    - Functions elegible for these are that ones who applies for nominal and
+    - Functions elegible for these are that ones who applies for value and
       std_dev values and return a new QFloat with the applied values.
     - No conversion or special treatment is done in this wrapper.
     - Only for one array ate once.
@@ -248,6 +251,303 @@ def _np_round(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> FuzzyQuantity:
     value = np.round(fuzzy_quantity.value, *args, **kwargs)
     uncertainty = np.round(fuzzy_quantity.uncertainty, *args, **kwargs)
     return FuzzyQuantity(value, uncertainty, fuzzy_quantity.unit)
+
+@_implements_array_func(np.append)
+def _np_append(fuzzy_quantity1: FuzzyQuantity, fuzzy_quantity2: FuzzyQuantity, *args, **kwargs) -> FuzzyQuantity:
+    """Implement np.append for FuzzyQuantity objects."""
+    # First, convert to the same unit.
+    fuzzy_quantity2 = fuzzy_quantity2.to(fuzzy_quantity1.unit)
+    value = np.append(fuzzy_quantity1.value, fuzzy_quantity2.value, *args, **kwargs)
+    uncertainty = np.append(fuzzy_quantity1.uncertainty, fuzzy_quantity2.uncertainty, *args, **kwargs)
+    return FuzzyQuantity(value, uncertainty, fuzzy_quantity1.unit)
+
+
+@_implements_array_func(np.insert)
+def _np_insert(fuzzy_quantity1: FuzzyQuantity, fuzzy_quantity2: FuzzyQuantity, index: int, *args, **kwargs) -> FuzzyQuantity:
+    """Implement np.insert for FuzzyQuantity objects."""
+    # Same unit needed too
+    fuzzy_quantity2 = fuzzy_quantity2.to(fuzzy_quantity1.unit)
+    value = np.insert(fuzzy_quantity1.value, index, fuzzy_quantity2.value, *args, **kwargs)
+    uncertainty = np.insert(fuzzy_quantity1.uncertainty, index, fuzzy_quantity2.uncertainty, *args, **kwargs)
+    return FuzzyQuantity(value, uncertainty, fuzzy_quantity1.unit)
+
+
+@_implements_array_func(np.sum)
+def _np_sum(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> FuzzyQuantity:
+    """Implement np.sum for FuzzyQuantity objects."""
+    value = np.sum(fuzzy_quantity.value, *args, **kwargs)
+    uncertainty = np.sqrt(np.sum(np.square(fuzzy_quantity.uncertainty), *args, **kwargs))
+    return FuzzyQuantity(value, uncertainty, fuzzy_quantity.unit)
+
+
+@_implements_array_func(np.mean)
+def _np_mean(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> FuzzyQuantity:
+    """Implement np.mean for FuzzyQuantity objects."""
+    value = np.mean(fuzzy_quantity.value, *args, **kwargs)
+    uncertainty = np.sqrt(np.sum(np.square(fuzzy_quantity.uncertainty), *args, **kwargs)) / len(value)
+    return FuzzyQuantity(value, uncertainty, fuzzy_quantity.unit)
+
+
+@_implements_array_func(np.nanmean)
+def _np_nanmean(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> FuzzyQuantity:
+    """Implement np.mean for FuzzyQuantity objects."""
+    value = np.nanmean(fuzzy_quantity.value, *args, **kwargs)
+    uncertainty = np.sqrt(np.sum(np.square(fuzzy_quantity.uncertainty), *args, **kwargs)) / len(value)
+    return FuzzyQuantity(value, uncertainty, fuzzy_quantity.unit)
+
+#TODO: need to figure out uncertainty for median
+
+# @_implements_array_func(np.median)
+# def _np_median(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> FuzzyQuantity:
+#     """Implement np.median for FuzzyQuantity objects."""
+#     value = np.median(fuzzy_quantity.value, *args, **kwargs)
+#     uncertainty = np.median(np.abs(fuzzy_quantity.value - value), *args, **kwargs)
+#     return FuzzyQuantity(value, uncertainty, fuzzy_quantity.unit)
+#
+#
+# @_implements_array_func(np.nanmedian)
+# def _np_nanmedian(fuzzy_quantity: FuzzyQuantity, *args, axis=None, **kwargs) -> FuzzyQuantity:
+#     """Implement np.median for FuzzyQuantity objects."""
+#     value = np.nanmedian(fuzzy_quantity.value, *args, axis=axis, **kwargs)
+#     # error of average = std_dev/sqrt(N)
+#     std = np.nanstd(fuzzy_quantity.value, axis=axis)
+#     # N is determined by the number of elements in the axis
+#     uncertainty = std / np.sqrt(np.nansum(fuzzy_quantity.value, axis=axis)/value)
+#     return FuzzyQuantity(value, uncertainty, fuzzy_quantity.unit)
+
+
+@_implements_array_func(np.std)
+def _np_std(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> u.Quantity:
+    """Implement np.std for FuzzyQuantity objects."""
+    return np.std(fuzzy_quantity.value, *args, **kwargs) * fuzzy_quantity.unit
+
+
+@_implements_array_func(np.nanstd)
+def _np_nanstd(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> u.Quantity:
+    """Implement np.std for FuzzyQuantity objects."""
+    return np.nanstd(fuzzy_quantity.value, *args, **kwargs) * fuzzy_quantity.unit
+
+
+@_implements_array_func(np.var)
+def _np_var(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> u.Quantity:
+    """Implement np.var for FuzzyQuantity objects."""
+    return np.var(fuzzy_quantity.value, *args, **kwargs) * fuzzy_quantity.unit
+
+
+@_implements_array_func(np.nanvar)
+def _np_nanvar(fuzzy_quantity: FuzzyQuantity, *args, **kwargs) -> u.Quantity:
+    """Implement np.var for FuzzyQuantity objects."""
+    return np.nanvar(fuzzy_quantity.value, *args, **kwargs) * fuzzy_quantity.unit
+
+################################################################
+
+def _implements_ufunc_on_value(func):
+    """Wraps ufuncs only on the value and don't return FuzzyQuantity object."""
+    def wrapper(fuzzy_quantity, *args, **kwargs):
+        return func(fuzzy_quantity.value, *args, **kwargs)
+    _implements_ufunc(func)(wrapper)
+
+
+_implements_ufunc_on_value(np.isnan)
+_implements_ufunc_on_value(np.isinf)
+_implements_ufunc_on_value(np.isfinite)
+_implements_ufunc_on_value(np.isneginf)
+_implements_ufunc_on_value(np.isposinf)
+_implements_ufunc_on_value(np.isreal)
+_implements_ufunc_on_value(np.iscomplex)
+_implements_ufunc_on_value(np.isscalar)
+_implements_ufunc_on_value(np.signbit)
+_implements_ufunc_on_value(np.sign)
+
+
+def _np_exp_log(fuzzy_quantity, func):
+    """General implementation for exp and log functions."""
+    if fuzzy_quantity.unit != u.dimensionless_unscaled:
+        raise UnitsError(f'{func.__name__} is only defined for dimensionless quantities.')
+    value = func(fuzzy_quantity.value)
+    uncertainty = propagate_1(func.__name__, value, fuzzy_quantity.value, fuzzy_quantity.uncertainty)
+    return FuzzyQuantity(value, uncertainty, u.dimensionless_unscaled)
+
+
+_implements_ufunc(np.exp)(partial(_np_exp_log, func=np.exp))
+_implements_ufunc(np.exp2)(partial(_np_exp_log, func=np.exp2))
+_implements_ufunc(np.expm1)(partial(_np_exp_log, func=np.expm1))
+_implements_ufunc(np.log)(partial(_np_exp_log, func=np.log))
+_implements_ufunc(np.log2)(partial(_np_exp_log, func=np.log2))
+_implements_ufunc(np.log10)(partial(_np_exp_log, func=np.log10))
+_implements_ufunc(np.log1p)(partial(_np_exp_log, func=np.log1p))
+
+
+def _np_floor_wrapper(fuzzy_quantity, func):
+    """General implementation for floor, ceil and trunc."""
+    return FuzzyQuantity(func(fuzzy_quantity.value), np.round(fuzzy_quantity.uncertainty, 0), fuzzy_quantity.unit)
+
+
+_implements_ufunc(np.floor)(partial(_np_floor_wrapper, func=np.floor))
+_implements_ufunc(np.ceil)(partial(_np_floor_wrapper, func=np.ceil))
+_implements_ufunc(np.trunc)(partial(_np_floor_wrapper, func=np.trunc))
+
+
+def _np_only_value_wrapper(fuzzy_quantity, func):
+    """General implementation for isfinite, isinf, isnan."""
+    return func(fuzzy_quantity.value)
+
+
+_implements_ufunc(np.isfinite)(partial(_np_only_value_wrapper,
+                                       func=np.isfinite))
+_implements_ufunc(np.isinf)(partial(_np_only_value_wrapper,
+                                    func=np.isinf))
+_implements_ufunc(np.isnan)(partial(_np_only_value_wrapper,
+                                    func=np.isnan))
+
+
+@_implements_ufunc(np.radians)
+@_implements_ufunc(np.deg2rad)
+def _np_radians(fuzzy_quantity, *args, **kwargs):
+    """Convert any qfloat angle to radian."""
+    return fuzzy_quantity.to(u.radian)
+
+
+@_implements_ufunc(np.degrees)
+@_implements_ufunc(np.rad2deg)
+def _np_degrees(fuzzy_quantity, *args, **kwargs):
+    return fuzzy_quantity.to(u.degree)
+
+
+def _trigonometric_simple_wrapper(numpy_ufunc):
+    def trig_wrapper(fuzzy_quantity, *args, **kwargs):
+        # check if qf is angle
+        if fuzzy_quantity.unit not in (u.degree, u.radian):
+            raise UnitsError('qfloat unit is not degree or radian.')
+
+        # if degree, convert to radian as required for numpy inputs.
+        if fuzzy_quantity.unit == u.degree:
+            qf = fuzzy_quantity.to(u.radian)
+
+        value = numpy_ufunc(fuzzy_quantity.value)
+        std = propagate_1(numpy_ufunc.__name__, value,
+                          fuzzy_quantity.value, fuzzy_quantity.std_dev)
+        return FuzzyQuantity(value, std, u.dimensionless_unscaled)
+    _implements_ufunc(numpy_ufunc)(trig_wrapper)
+
+
+def _inverse_trigonometric_simple_wrapper(numpy_ufunc):
+    def inv_wrapper(fuzzy_quantity, *args, **kwargs):
+        if fuzzy_quantity.unit != u.dimensionless_unscaled:
+            raise UnitsError('inverse trigonometric functions require '
+                             'dimensionless unscaled variables.')
+
+        value = numpy_ufunc(fuzzy_quantity.value)
+        std = propagate_1(numpy_ufunc.__name__, value,
+                          fuzzy_quantity.value, fuzzy_quantity.std_dev)
+
+        return FuzzyQuantity(value, std, u.radian)
+    _implements_ufunc(numpy_ufunc)(inv_wrapper)
+
+
+_trigonometric_simple_wrapper(np.sin)
+_trigonometric_simple_wrapper(np.cos)
+_trigonometric_simple_wrapper(np.tan)
+_trigonometric_simple_wrapper(np.sinh)
+_trigonometric_simple_wrapper(np.cosh)
+_trigonometric_simple_wrapper(np.tanh)
+_inverse_trigonometric_simple_wrapper(np.arcsin)
+_inverse_trigonometric_simple_wrapper(np.arccos)
+_inverse_trigonometric_simple_wrapper(np.arctan)
+_inverse_trigonometric_simple_wrapper(np.arcsinh)
+_inverse_trigonometric_simple_wrapper(np.arccosh)
+_inverse_trigonometric_simple_wrapper(np.arctanh)
+
+
+@_implements_ufunc(np.arctan2)
+def _np_arctan2(qf1, qf2):
+    """Compute the arctangent of qf1/qf2."""
+    # The 2 values must be in the same unit.
+    qf2 = qf2.to(qf1.unit)
+    value = np.arctan2(qf1.value, qf2.value)
+    std = propagate_2('arctan2', value, qf1.value, qf2.value,
+                      qf1.std_dev, qf2.std_dev)
+    return FuzzyQuantity(value, std, u.radian)
+
+
+_ufunc_translate = {
+    'add': FuzzyQuantity.__add__,
+    'absolute': FuzzyQuantity.__abs__,
+    'divide': FuzzyQuantity.__truediv__,
+    'float_power': FuzzyQuantity.__pow__,
+    'floor_divide': FuzzyQuantity.__floordiv__,
+    'multiply': FuzzyQuantity.__mul__,
+    'negative': FuzzyQuantity.__neg__,
+    'positive': FuzzyQuantity.__pos__,
+    'power': FuzzyQuantity.__pow__,
+    'mod': FuzzyQuantity.__mod__,
+    'remainder': FuzzyQuantity.__mod__,
+    'subtract': FuzzyQuantity.__sub__,
+    'true_divide': FuzzyQuantity.__truediv__,
+    'divmod': lambda x, y: (FuzzyQuantity.__floordiv__(x, y), FuzzyQuantity.__mod__(x, y)),
+}
+
+
+def _general_ufunc_wrapper(numpy_ufunc):
+    """Implement ufuncs for general math operations.
+
+    Notes
+    -----
+    - These functions will not operate with kwarg.
+    - These functions will just wrap QFloat math methods.
+    """
+    ufunc_name = numpy_ufunc.__name__
+    true_func = _ufunc_translate[ufunc_name]
+
+    def ufunc_wrapper(*inputs):
+        return true_func(*inputs)
+    _implements_ufunc(numpy_ufunc)(ufunc_wrapper)
+
+
+_general_ufunc_wrapper(np.add)
+_general_ufunc_wrapper(np.absolute)
+_general_ufunc_wrapper(np.divide)
+_general_ufunc_wrapper(np.divmod)
+_general_ufunc_wrapper(np.float_power)
+_general_ufunc_wrapper(np.floor_divide)
+_general_ufunc_wrapper(np.mod)
+_general_ufunc_wrapper(np.multiply)
+_general_ufunc_wrapper(np.negative)
+_general_ufunc_wrapper(np.positive)
+_general_ufunc_wrapper(np.power)
+_general_ufunc_wrapper(np.remainder)
+_general_ufunc_wrapper(np.subtract)
+_general_ufunc_wrapper(np.true_divide)
+
+
+@_implements_ufunc(np.copysign)
+def _np_copysign(qf1, qf2):
+    """Return the first argument with the sign of the second argument."""
+    value = np.copysign(qf1.value, qf2.value)
+    std = propagate_2('copysign', value, qf1.value, qf2.value,
+                      qf1.std_dev, qf2.std_dev)
+    return FuzzyQuantity(value, std, qf1.unit)
+
+
+@_implements_ufunc(np.square)
+def _np_square(qf):
+    return qf * qf
+
+
+@_implements_ufunc(np.sqrt)
+def _np_sqrt(qf):
+    return qf**0.5
+
+
+@_implements_ufunc(np.hypot)
+def _np_hypot(qf1, qf2):
+    qf2 = qf2.to(qf1.unit)
+    value = np.hypot(qf1.value, qf2.value)
+    std = propagate_2('hypot', value, qf1.value, qf2.value,
+                      qf1.std_dev, qf2.std_dev)
+    return FuzzyQuantity(value, std, qf1.unit)
+
+##########################
 
 if __name__ == '__main__':
     fuzz = FuzzyQuantity(7, 2, unit = 'Jy')
