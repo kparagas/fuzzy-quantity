@@ -4,9 +4,9 @@ import numpy as np
 import astropy.units as u
 from astropy.units.typing import QuantityLike
 
-from fuzzyquantity.derivatives import _propagate_1, _propagate_2
-from fuzzyquantity.exceptions import UnitsError
-from fuzzyquantity.string_formatting import (_terminal_string,
+from derivatives import _propagate_1, _propagate_2
+from exceptions import UnitsError
+from string_formatting import (_terminal_string,
                                              _make_siunitx_string,
                                              _make_oldschool_latex_string)
 
@@ -40,9 +40,9 @@ class FuzzyQuantity(u.Quantity):
                               unit=unit, 
                               **kwargs)
         if isinstance(uncertainty, u.Quantity):
-            obj.uncertainty = u.Quantity(uncertainty).to(obj.unit).value
+            cls.uncertainty = u.Quantity(uncertainty).to(obj.unit).value
         else:
-            obj.uncertainty = uncertainty
+            cls.uncertainty = uncertainty
         return obj
 
     def __str__(self) -> str:
@@ -241,7 +241,9 @@ def _np_clip(fuzzy_quantity: FuzzyQuantity,
     FuzzyQuantity
         The FuzzyQuantity object clipped to the provided value range.
     """
+    print(fuzzy_quantity)
     value = np.clip(fuzzy_quantity.value, a_min, a_max, *args, **kwargs)
+    print(value)
     return FuzzyQuantity(value, fuzzy_quantity.uncertainty,
                          fuzzy_quantity.unit)
 
@@ -265,6 +267,7 @@ def _array_func_simple_wrapper(numpy_func: callable):
 
 # register simple array functions
 # noinspection DuplicatedCode
+_array_func_simple_wrapper(np.clip)
 _array_func_simple_wrapper(np.delete)
 _array_func_simple_wrapper(np.expand_dims)
 _array_func_simple_wrapper(np.flip)
@@ -925,5 +928,6 @@ def _np_hypot(qf1, qf2):
 
 if __name__ == '__main__':
     fuzz = FuzzyQuantity(7, 2, unit = 'Jy')
+    # print(fuzz.uncertainty)
 
-    print(np.clip(fuzz, 8.5, 9.1))
+    print(np.clip(fuzz, 8.5 * u.Jy, 9.1 * u.Jy))
