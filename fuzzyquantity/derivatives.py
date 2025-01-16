@@ -158,6 +158,7 @@ def _propagate_2(func, fxy, x, y, sx, sy):
         del_y2 = np.square(deriv_y(x, y))
         sx2 = np.square(sx)
         sy2 = np.square(sy)
+        # print(del_x2, del_y2, sx2, sy2)
         sf = np.sqrt(del_x2*sx2 + del_y2*sy2)
         return sf
     except (ValueError, ZeroDivisionError, OverflowError):

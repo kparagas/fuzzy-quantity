@@ -9,6 +9,7 @@ step_size = np.sqrt(sys.float_info.epsilon)
 # noinspection PyUnresolvedReferences
 class TestFuzzyQuantityCreation:
 
+
     def test_has_expected_value_int(self):
         fuzz = FuzzyQuantity(5, 1)
         assert fuzz.value == 5
@@ -389,3 +390,7 @@ class TestFuzzyQuantityPower:
         fuzz3 = fuzz1 ** fuzz2
         unc_expected = np.array([1198.37857041, 69.42438223])
         assert np.allclose(fuzz3.uncertainty, unc_expected, rtol=step_size)
+
+# TODO: Kim's afuncs
+
+# TODO: Zac's ufuncs

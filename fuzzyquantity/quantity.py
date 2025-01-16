@@ -4,11 +4,20 @@ import numpy as np
 import astropy.units as u
 from astropy.units.typing import QuantityLike
 
-from derivatives import _propagate_1, _propagate_2
-from exceptions import UnitsError
-from string_formatting import (_terminal_string,
+from fuzzyquantity.derivatives import _propagate_1, _propagate_2
+from fuzzyquantity.exceptions import UnitsError
+from fuzzyquantity.string_formatting import (_terminal_string,
                                              _make_siunitx_string,
                                              _make_oldschool_latex_string)
+
+
+def _check_if_iterable(obj):
+    try:
+        iter(obj)
+        return True
+    except TypeError:
+        return False
+
 
 class FuzzyQuantity(u.Quantity):
     """
@@ -25,7 +34,7 @@ class FuzzyQuantity(u.Quantity):
         ----------
         value : QuantityLike
             The quantity's measured value.
-        uncertainty : QuantityLike=
+        uncertainty : QuantityLike
             The quantity's measured uncertainty. Assumed to be 1-sigma
             Gaussian uncertainty. Asymmetric uncertainties not supported.
         unit : unit-like, optional
@@ -36,17 +45,31 @@ class FuzzyQuantity(u.Quantity):
             Additional keyword arguments are passed to `Quantity`.
         """
         obj = super().__new__(cls, 
-                              value=value, 
+                              value=value,
                               unit=unit, 
                               **kwargs)
+        if _check_if_iterable(value) and not _check_if_iterable(uncertainty):
+            uncertainty = np.full(np.asarray(value).size, uncertainty)
         if isinstance(uncertainty, u.Quantity):
-            cls.uncertainty = u.Quantity(uncertainty).to(obj.unit).value
+            obj.uncertainty = u.Quantity(uncertainty).to(obj.unit).value
         else:
-            cls.uncertainty = uncertainty
+            obj.uncertainty = uncertainty
         return obj
 
     def __str__(self) -> str:
         return _terminal_string(self.value, self.uncertainty, self.unit)
+
+    def __array_ufunc__(self, ufunc, method, *args, **kwargs):
+        if ufunc not in _available_numpy_universal_functions:
+            return NotImplemented
+        return _available_numpy_universal_functions[ufunc](*args, **kwargs)
+
+    def __array_function__(self, func, types, args, kwargs):
+        if func not in _available_numpy_array_functions:
+            return NotImplemented
+        if not all(issubclass(t, FuzzyQuantity) for t in types):
+            return NotImplemented
+        return _available_numpy_array_functions[func](*args, **kwargs)
 
     @staticmethod
     def _parse_input(other):
@@ -67,9 +90,9 @@ class FuzzyQuantity(u.Quantity):
     def __add__(self, other):
         value, uncertainty, unit = self._parse_input(other)
         out_value = self.value * self.unit + value * unit
-        out_uncertainty = _propagate_2('add', out_value, self.value, value, 
+        out_uncertainty = _propagate_2('add', out_value, self.value, value,
                                        self.uncertainty, uncertainty)
-        return FuzzyQuantity(value=out_value, uncertainty=out_uncertainty)
+        return FuzzyQuantity(out_value, out_uncertainty, self.unit)
 
     __radd__ = __add__
 
@@ -109,6 +132,8 @@ class FuzzyQuantity(u.Quantity):
                                        self.uncertainty, uncertainty)
         return FuzzyQuantity(value=out_value, uncertainty=out_uncertainty)
 
+    __rpow__ = __pow__
+
     # TODO: implement list/array version as indicated in the docstring
     def latex(self,
               sci_thresh: int = 3,
@@ -144,10 +169,10 @@ class FuzzyQuantity(u.Quantity):
         """
         if siunitx:
             return _make_siunitx_string(
-                self.value, self.uncertainty.value, self.unit, sci_thresh)
+                self.value, self.uncertainty, self.unit, sci_thresh)
         else:
             return _make_oldschool_latex_string(
-                self.value, self.uncertainty.value, self.unit, sci_thresh)
+                self.value, self.uncertainty, self.unit, sci_thresh)
 
 
 _available_numpy_array_functions = {}
@@ -223,10 +248,10 @@ def _np_size(fuzzy_quantity: FuzzyQuantity) -> int:
 
 
 @_implements_array_func(np.clip)
-def _np_clip(fuzzy_quantity: FuzzyQuantity, 
-             a_min, 
-             a_max, 
-             *args, 
+def _np_clip(fuzzy_quantity: FuzzyQuantity,
+             a_min,
+             a_max,
+             *args,
              **kwargs) -> FuzzyQuantity:
     """
     Implement np.clip for FuzzyQuantity objects.
@@ -241,9 +266,8 @@ def _np_clip(fuzzy_quantity: FuzzyQuantity,
     FuzzyQuantity
         The FuzzyQuantity object clipped to the provided value range.
     """
-    print(fuzzy_quantity)
     value = np.clip(fuzzy_quantity.value, a_min, a_max, *args, **kwargs)
-    print(value)
+    print(fuzzy_quantity.uncertainty)
     return FuzzyQuantity(value, fuzzy_quantity.uncertainty,
                          fuzzy_quantity.unit)
 
@@ -267,7 +291,6 @@ def _array_func_simple_wrapper(numpy_func: callable):
 
 # register simple array functions
 # noinspection DuplicatedCode
-_array_func_simple_wrapper(np.clip)
 _array_func_simple_wrapper(np.delete)
 _array_func_simple_wrapper(np.expand_dims)
 _array_func_simple_wrapper(np.flip)
@@ -469,7 +492,7 @@ def _calculate_mean_median(meanfunc: callable,
         axis = args[0]
     elif 'axis' in kwargs.keys():
         axis = kwargs['axis']
-    n = np.size(value, axis=axis)
+    n = np.size(fuzzy_quantity.value, axis=axis)
     uncertainty = np.sqrt(
         sumfunc(fuzzy_quantity.uncertainty ** 2, *args, **kwargs)) / n
     if median_uncertainty:
@@ -499,7 +522,7 @@ def _np_mean(fuzzy_quantity: FuzzyQuantity,
         The average FuzzyQuantity object with propagated error.
     """
     return _calculate_mean_median(np.mean, np.sum, fuzzy_quantity, False,
-                                  False, *args, **kwargs)
+                                  None, *args, **kwargs)
 
 
 @_implements_array_func(np.nanmean)
@@ -913,7 +936,7 @@ def _np_square(qf):
 
 @_implements_ufunc(np.sqrt)
 def _np_sqrt(qf):
-    return qf**0.5
+    return qf ** 0.5
 
 
 @_implements_ufunc(np.hypot)
@@ -924,10 +947,9 @@ def _np_hypot(qf1, qf2):
                        qf1.std_dev, qf2.std_dev)
     return FuzzyQuantity(value, std, qf1.unit)
 
-##########################
 
 if __name__ == '__main__':
-    fuzz = FuzzyQuantity(7, 2, unit = 'Jy')
-    # print(fuzz.uncertainty)
-
-    print(np.clip(fuzz, 8.5 * u.Jy, 9.1 * u.Jy))
+    fuzz1 = FuzzyQuantity(5, 2, unit='kg')
+    fuzz2 = FuzzyQuantity(3, 1, unit='g')
+    fuzz3 = fuzz1 + fuzz2
+    print(fuzz3)
